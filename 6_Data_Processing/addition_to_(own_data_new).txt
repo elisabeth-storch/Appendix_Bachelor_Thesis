@@ -1,0 +1,172 @@
+%-----------------------------------------
+
+%-----------------------------------------
+
+from xyzTomol import read_xyz_all_conformers, parse_filename, build_bonds_and_charges, build_mol_with_coords
+import os
+
+folder_path = "data"
+mols = []
+
+for root, dirs, files in os.walk(folder_path):
+    for file in files:
+        if file.endswith(".xyz"):
+            xyz_file = os.path.join(root, file)
+            zentralatom, oxzahl, liganden = parse_filename(file)
+            conformers = read_xyz_all_conformers(xyz_file)
+            for atoms, coords in conformers:
+                bonds, charges, total_charge = build_bonds_and_charges(atoms, zentralatom, liganden, oxzahl)
+                mol = build_mol_with_coords(atoms, coords, bonds, charges)
+                mols.append(mol)
+
+# Jetzt kannst du direkt mit mols weiterarbeiten, z.B.:
+#for i, mol in enumerate(mols):
+    # Beispiel: Ausgabe des Namens oder SMILES
+#    print(Chem.MolToSmiles(mol))
+#    Chem.MolToMolFile(mol, "/home/florian/CSD_Test_2/data/xyz2.mol", i)
+
+%----------------------------------------
+
+%----------------------------------------
+
+import os
+import json
+
+# Mapping wie in Sort.py (kannst du anpassen)
+config_index = {
+    "OC": "Oktaedrisch"
+}
+
+
+# Hilfsfunktion: Geometrie aus Dateinamen extrahieren (anpassen falls nötig)
+def get_geometry_from_filename(filename):
+    for key in config_index:
+        if filename.startswith(key + "_"):
+            return config_index[key]
+    return "Unknown"
+
+folder_path = "/home/elisabeth/CSD/data"
+geometry_mols = {geo: [] for geo in config_index.values()}
+geometry_counts = {geo: 0 for geo in config_index.values()}
+
+for root, dirs, files in os.walk(folder_path):
+    for file in files:
+        if file.endswith(".xyz"):
+            geo = get_geometry_from_filename(file)
+            if geo == "Unknown":
+                continue
+            xyz_file = os.path.join(root, file)
+            zentralatom, oxzahl, liganden = parse_filename(file)
+            conformers = read_xyz_all_conformers(xyz_file)
+            for atoms, coords in conformers:
+                bonds, charges, total_charge = build_bonds_and_charges(atoms, zentralatom, liganden, oxzahl)
+                mol = build_mol_with_coords(atoms, coords, bonds, charges)
+                geometry_mols[geo].append(mol)
+            geometry_counts[geo] += 1
+
+# Jetzt für jede Geometrie die drei JSON-Dateien erzeugen
+for geo, mols in geometry_mols.items():
+    if not mols:
+        continue
+    struct2torsion = {}
+    n_Bonds = 3
+    print(f"Processing geometry: {geo} with {len(mols)} molecules")
+    save_interval = 1000  # z.B. alle 1000 Moleküle speichern
+    for i, mol in enumerate(mols):
+        paths = Chem.FindAllPathsOfLengthN(mol, n_Bonds, useHs=True)
+        for path in paths:
+            sub_mol = Chem.PathToSubmol(mol, path)
+            path_smiles = Chem.MolToSmiles(sub_mol, kekuleSmiles=False, canonical=True)
+            if path_smiles not in struct2torsion:
+                struct2torsion[path_smiles] = []
+            if len(sub_mol.GetAtoms()) != n_Bonds+1:
+                continue
+            torsion = rdMolTransforms.GetDihedralDeg(sub_mol.GetConformer(), *range(n_Bonds+1))
+            struct2torsion[path_smiles].append(torsion)
+    print(f"Processed {len(struct2torsion)} torsion structures for geometry {geo}")
+    if (i + 1) % save_interval == 0:
+            torsion_file = f'Geometry_Data/GOAT_torsion_{geo}_part{i//save_interval}.json'
+            angle_file = f'Geometry_Data/GOAT_angles_{geo}_part{i//save_interval}.json'
+            bond_file = f'Geometry_Data/GOAT_bonds_{geo}_part{i//save_interval}.json'
+            with open(torsion_file, 'w') as f:
+                json.dump(struct2torsion, f)
+            with open(angle_file, 'w') as f:
+                json.dump(struct2angle, f)
+            with open(bond_file, 'w') as f:
+                json.dump(struct2bond, f)
+            print(f"Zwischengespeichert nach {i+1} Molekülen für Geometrie {geo}")
+            struct2torsion.clear()
+    struct2angle = {}
+    n_Bonds = 2
+    save_interval = 1000  # z.B. alle 1000 Moleküle speichern
+    for i, mol in enumerate(mols):
+        paths = Chem.FindAllPathsOfLengthN(mol, n_Bonds, useHs=True)
+        for path in paths:
+            sub_mol = Chem.PathToSubmol(mol, path)
+            path_smiles = Chem.MolToSmiles(sub_mol, kekuleSmiles=False, canonical=True)
+            if path_smiles not in struct2angle:
+                struct2angle[path_smiles] = []
+            if len(sub_mol.GetAtoms()) != n_Bonds+1:
+                continue
+            angle = rdMolTransforms.GetAngleDeg(sub_mol.GetConformer(), *range(n_Bonds+1))
+            struct2angle[path_smiles].append(angle)
+    print(f"Processed {len(struct2angle)} angle structures for geometry {geo}")
+    if (i + 1) % save_interval == 0:
+            torsion_file = f'Geometry_Data/GOAT_torsion_{geo}_part{i//save_interval}.json'
+            angle_file = f'Geometry_Data/GOAT_angles_{geo}_part{i//save_interval}.json'
+            bond_file = f'Geometry_Data/GOAT_bonds_{geo}_part{i//save_interval}.json'
+            with open(torsion_file, 'w') as f:
+                json.dump(struct2torsion, f)
+            with open(angle_file, 'w') as f:
+                json.dump(struct2angle, f)
+            with open(bond_file, 'w') as f:
+                json.dump(struct2bond, f)
+            print(f"Zwischengespeichert nach {i+1} Molekülen für Geometrie {geo}")
+            struct2angle.clear()
+    struct2bond = {}
+    n_Bonds = 1
+    save_interval = 1000  # z.B. alle 1000 Moleküle speichern
+    for i, mol in enumerate(mols):
+        paths = Chem.FindAllPathsOfLengthN(mol, n_Bonds, useHs=True)
+        for path in paths:
+            sub_mol = Chem.PathToSubmol(mol, path)
+            path_smiles = Chem.MolToSmiles(sub_mol, kekuleSmiles=False, canonical=True)
+            if path_smiles not in struct2bond:
+                struct2bond[path_smiles] = []
+            if len(sub_mol.GetAtoms()) != n_Bonds+1:
+                continue
+            bond = rdMolTransforms.GetBondLength(sub_mol.GetConformer(), *range(n_Bonds+1))
+            struct2bond[path_smiles].append(bond)
+    print(f"Processed {len(struct2bond)} bond structures for geometry {geo}")
+    if (i + 1) % save_interval == 0:
+            torsion_file = f'Geometry_Data/GOAT_torsion_{geo}_part{i//save_interval}.json'
+            angle_file = f'Geometry_Data/GOAT_angles_{geo}_part{i//save_interval}.json'
+            bond_file = f'Geometry_Data/GOAT_bonds_{geo}_part{i//save_interval}.json'
+            with open(torsion_file, 'w') as f:
+                json.dump(struct2torsion, f)
+            with open(angle_file, 'w') as f:
+                json.dump(struct2angle, f)
+            with open(bond_file, 'w') as f:
+                json.dump(struct2bond, f)
+            print(f"Zwischengespeichert nach {i+1} Molekülen für Geometrie {geo}")
+            struct2bond.clear()
+
+    # Prüfe, ob die Dateien schon existieren, und skippe falls ja
+    torsion_file = f'Geometry_Data/GOAT_torsion_{geo}.json'
+    angle_file = f'Geometry_Data/GOAT_angles_{geo}.json'
+    bond_file = f'Geometry_Data/GOAT_bonds_{geo}.json'
+    if os.path.exists(torsion_file) and os.path.exists(angle_file) and os.path.exists(bond_file):
+        print(f"Dateien für Geometrie {geo} existieren bereits, überspringe...")
+        continue
+
+    with open(torsion_file, 'w') as f:
+        json.dump(struct2torsion, f)
+    with open(angle_file, 'w') as f:
+        json.dump(struct2angle, f)
+    with open(bond_file, 'w') as f:
+        json.dump(struct2bond, f)
+    print(f"Saved JSON files for geometry {geo}")
+
+# Ausgabe wie viele Dateien pro Geometrie verarbeitet wurden
+for geo, count in geometry_counts.items():
+    print(f"{geo}: {count} Dateien verarbeitet")
