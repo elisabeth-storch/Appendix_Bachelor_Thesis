@@ -1,0 +1,345 @@
+%-----------------------------------------
+Generation of the Plots
+%-----------------------------------------
+
+import os
+import itertools
+
+# Nutze die gleichen Atome/Metalle wie im Hauptcode  # Use the same atoms/metals as in the main code
+atoms = ["C", "H", "N", "S", "O", "P", "Cl", 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'Os', 'Ir', 'Pt', 'Au', 'Hg']
+non_metals = ["C", "H", "N", "S", "O", "P", "Cl"]
+metals = [a for a in atoms if a not in non_metals]
+multi_letter_atoms = ['Cl', 'Br', 'Sc', 'Ti', 'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd',
+    'La', 'Hf', 'Ta', 'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg']
+
+os.makedirs("Plots", exist_ok=True)  # Create folder "Plots" if it doesn't already exist
+
+progress_file_bonds = "progress_bonds.txt"  # File to store progress (resuming support)
+plots_per_run_bonds = 10  # Passe ggf. an  # Number of plots per run (adjust if needed)
+
+# Fortschritt laden  # Load progress
+start_idx_bonds = 0
+if os.path.exists(progress_file_bonds):
+    with open(progress_file_bonds, "r") as f:
+        start_idx_bonds = int(f.read().strip())
+
+# Nur Bindungen (2 Atome)  # Only bonds (2 atoms)
+combos_bonds = []
+n = 2
+for metal in metals:
+    for metal_pos in range(n):  # Insert metal at each possible position
+        for non_metal_combo in itertools.product(non_metals, repeat=n-1):
+            combo = list(non_metal_combo)
+            combo.insert(metal_pos, metal)
+            selected_atoms = "".join(combo)
+            combos_bonds.append(selected_atoms)
+
+# Blockweise abarbeiten, Fortschritt robust speichern  # Process in blocks, save progress robustly
+for idx, selected_atoms in enumerate(combos_bonds[start_idx_bonds:], start=start_idx_bonds):
+    # Fortschritt speichern VOR dem Plotten, robust auf Festplatte schreiben
+    # Save progress BEFORE plotting, ensure it's written to disk
+    with open(progress_file_bonds, "w") as f:
+        f.write(str(idx))
+        f.flush()
+        os.fsync(f.fileno())
+
+    try_draw_and_save(selected_atoms)  # Call your custom plot function here
+
+    if (idx - start_idx_bonds + 1) >= plots_per_run_bonds:
+        print(f"Blocklimit {plots_per_run_bonds} erreicht. Fortschritt gespeichert bei Index {idx+1}.")
+        # Block limit reached. Progress saved at index {idx+1}.
+        break
+
+%----------------------------------------------
+
+# To use the code shown above for the "Angles" and "Torsion", the block "# Nur Bindungen (2 Atome)" needs to be replaced by: 
+
+# === Winkel (3 Atome) ===  # Angles (3 atoms)
+combos_angles = []
+n = 3
+for metal in metals:
+    for metal_pos in range(n):  # Insert metal at each possible position
+        for non_metal_combo in itertools.product(non_metals, repeat=n-1):
+            combo = list(non_metal_combo)
+            combo.insert(metal_pos, metal)
+            selected_atoms = "".join(combo)
+            combos_angles.append(selected_atoms)
+
+# === Torsionen (4 Atome) ===  # Torsions (4 atoms)
+combos_torsions = []
+n = 4
+for metal in metals:
+    for metal_pos in range(n):  # Insert metal at each possible position
+        for non_metal_combo in itertools.product(non_metals, repeat=n-1):
+            combo = list(non_metal_combo)
+            combo.insert(metal_pos, metal)
+            selected_atoms = "".join(combo)
+            combos_torsions.append(selected_atoms)
+
+%-----------------------------------------------
+Analysis of the overlap between CSD and GOAT data for the bonds
+%-----------------------------------------------
+
+import os
+import numpy as np
+
+dicts = [
+    ("Bindung", cleaned_CCDC_bonds, cleaned_GOAT_bonds, cleaned_OMol25_bonds, "Bindungen"),  # Bonds
+    ("Winkel", cleaned_CCDC_angles, cleaned_GOAT_angles, {}, "Winkel"),  # Angles
+    ("Torsion", cleaned_CCDC_torsions, cleaned_GOAT_torsions, {}, "Torsionen"),  # Torsions
+]
+
+multi_letter_atoms = [
+    'Cl', 'Br', 'Sc', 'Ti', 'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd',
+    'La', 'Hf', 'Ta', 'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg'
+]
+
+def safe_len(x):  # Hilfsfunktion für sichere Längen  # Helper function for safe length
+    try:
+        return len(x)
+    except Exception:
+        return 0
+
+def get_metal_from_combo(selected_atoms, metals):  # Bestimmt Metall aus Kombination  # Extract metal from atom combination
+    i = 0
+    while i < len(selected_atoms):
+        if i+1 < len(selected_atoms) and selected_atoms[i:i+2] in metals:
+            return selected_atoms[i:i+2]
+        elif selected_atoms[i] in metals:
+            return selected_atoms[i]
+        i += 1
+    return "Unknown"
+
+def overlap_count(list1, list2, tol=1e-3):  # Anzahl gemeinsamer Werte mit Toleranz  # Count overlapping values with tolerance
+    if len(list1) == 0 or len(list2) == 0:
+        return 0
+    arr2 = np.array(list2)
+    count = 0
+    for v in list1:
+        if np.any(np.isclose(v, arr2, atol=tol)):
+            count += 1
+    return count
+
+progress_file_stats = "progress_stats.txt"  # Datei zur Speicherung des Fortschritts  # File to store progress
+stats_per_run = 100  # Anzahl der Auswertungen pro Lauf  # Number of evaluations per run
+
+metals = ['Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'Os', 'Ir', 'Pt', 'Au', 'Hg']
+
+# Fortschritt laden  # Load progress
+start_idx_stats = 0
+if os.path.exists(progress_file_stats):
+    with open(progress_file_stats, "r") as f:
+        try:
+            start_idx_stats = int(f.read().strip())
+        except Exception:
+            start_idx_stats = 0
+
+try:
+    with open("Plots/vergleich_statistiken.txt", "a") as f:  # Ergebnisse anhängen  # Append results
+        counter = 0
+        finished = True
+        for typ, csd_dict, goat_dict, omol_dict, subfolder in dicts:
+            all_keys = sorted(set(csd_dict.keys()) | set(goat_dict.keys()) | set(omol_dict.keys()))
+            # Nur Keys, für die ein Plot existiert:  # Only keys for which a plot exists
+            keys_with_plot = []
+            for key in all_keys:
+                metal = get_metal_from_combo(key, metals)
+                plot_path = os.path.join("Plots", metal, subfolder, f"{key}.png")
+                if os.path.exists(plot_path):
+                    keys_with_plot.append(key)
+            total_keys = len(keys_with_plot)
+            if start_idx_stats >= total_keys:
+                continue  # Schon alles abgearbeitet  # Already completed
+            finished = False
+            f.write(f"==== {typ} ====\n")
+            for idx, key in enumerate(keys_with_plot[start_idx_stats:], start=start_idx_stats):
+                # Fortschritt speichern VOR der Auswertung!  # Save progress BEFORE evaluation!
+                with open(progress_file_stats, "w") as pf:
+                    pf.write(str(idx))
+                    pf.flush()
+                    os.fsync(pf.fileno())
+
+                csd_list = csd_dict.get(key, [])
+                goat_list = goat_dict.get(key, [])
+                omol_list = omol_dict.get(key, []) if omol_dict else []
+
+                csd_goat_overlap = overlap_count(csd_list, goat_list)
+                omol_goat_overlap = overlap_count(omol_list, goat_list) if omol_dict else 0
+                omol_csd_overlap = overlap_count(omol_list, csd_list) if omol_dict else 0
+
+                csd_covered_by_goat = (csd_goat_overlap / len(csd_list) * 100) if len(csd_list) > 0 else 0
+
+                n_csd = safe_len(csd_list)
+                n_goat = safe_len(goat_list)
+                n_omol = safe_len(omol_list)
+
+                f.write(
+                    f"{key}: "
+                    f"CSD={n_csd}, GOAT={n_goat}, OMol25={n_omol} | "
+                    f"CSD∩GOAT={csd_goat_overlap}, OMol∩GOAT={omol_goat_overlap}, OMol∩CSD={omol_csd_overlap} | "
+                    f"CSD covered by GOAT: {csd_covered_by_goat:.1f}%\n"
+                )
+                counter += 1
+                if counter >= stats_per_run:
+                    print(f"Blocklimit {stats_per_run} erreicht. Fortschritt gespeichert bei Index {idx+1}.")
+                    # Block limit reached. Progress saved at index {idx+1}.
+                    break
+            f.write("\n")
+            break  # Nur einen Typ pro Run bearbeiten, damit Fortschritt stimmt
+                   # Only process one type per run to keep progress accurate
+        if finished or (counter < stats_per_run and not finished):
+            print("Alle Statistiken wurden abgearbeitet!")
+            # All statistics have been processed!
+            with open(progress_file_stats, "w") as pf:
+                pf.write("0")
+                pf.flush()
+                os.fsync(pf.fileno())
+        else:
+            print("Statistiken gespeichert in Plots/vergleich_statistiken.txt")
+            # Statistics saved in Plots/vergleich_statistiken.txt
+except KeyboardInterrupt:
+    print("Abbruch durch Nutzer. Fortschritt wurde gespeichert und kann beim nächsten Lauf fortgesetzt werden.")
+    # Interrupted by user. Progress has been saved and can be resumed later.
+
+
+%-----------------------------------------------
+Analysis of the overlap between CSD and GOAT data for the angles and torsion 
+%-----------------------------------------------
+
+import numpy as np
+import os
+from datetime import datetime
+
+# Overlap count with tolerance
+def overlap_count(list1, list2, tol=1e-3):
+    if list1 is None or list2 is None or len(list1) == 0 or len(list2) == 0:
+        return 0
+    try:
+        arr1 = np.array(list1, dtype=float)
+        arr2 = np.array(list2, dtype=float)
+    except Exception:
+        return 0
+    return sum(np.any(np.isclose(v, arr2, atol=tol)) for v in arr1)
+
+# Safely calculate statistics
+def calculate_statistics(data_list):
+    if not data_list:
+        return {"count": 0, "min": 0, "max": 0, "mean": 0, "std": 0, "median": 0}
+    try:
+        arr = np.array(data_list, dtype=float)
+        return {
+            "count": len(arr),
+            "min": np.min(arr),
+            "max": np.max(arr),
+            "mean": np.mean(arr),
+            "std": np.std(arr),
+            "median": np.median(arr)
+        }
+    except Exception:
+        return {"count": len(data_list), "min": 0, "max": 0, "mean": 0, "std": 0, "median": 0}
+
+# Compute coverage percentage
+def get_overlap_percentage(overlap, total):
+    return (overlap / total * 100) if total > 0 else 0
+
+# Main analysis function
+def analyze_angle_torsion_combinations():
+    angle_file = r"<Path_to_file_winkel_kombis_csd_und_goat.txt>"
+    torsion_file = r"<Path_to_file_torsion_kombis_csd_und_goat.txt>"
+    output_file = r"<Path_to_file_winkel_torsion_detaillierte_analyse.txt>"
+    summary_file = r"<Path_to_file_winkel_torsion_kurzfassung.txt>"
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    stats_overall = {
+        "winkel": {"total_combinations": 0, "csd_total": 0, "goat_total": 0, "overlap_total": 0},
+        "torsion": {"total_combinations": 0, "csd_total": 0, "goat_total": 0, "overlap_total": 0}
+    }
+
+    with open(output_file, "w", encoding="utf-8") as out:
+        out.write(f"Detailed Angle and Torsion Analysis\nTimestamp: {timestamp}\n{'='*80}\n")
+
+        for label, filepath, csd_data, goat_data in [
+            ("ANGLE", angle_file, cleaned_CCDC_angles, cleaned_GOAT_angles),
+            ("TORSION", torsion_file, cleaned_CCDC_torsions, cleaned_GOAT_torsions)
+        ]:
+            out.write(f"\n{label} ANALYSIS\n{'='*50}\n")
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    lines = [line.strip() for line in f if line.strip()]
+                    if lines and lines[0].startswith("Kombination"):
+                        keys = [line.split("\t")[0] for line in lines[1:] if '\t' in line]
+                    else:
+                        keys = lines
+            except FileNotFoundError:
+                out.write(f"File not found: {filepath}\n")
+                continue
+
+            stats = stats_overall["winkel" if label == "ANGLE" else "torsion"]
+
+            for key in keys:
+                csd_list = csd_data.get(key, [])
+                goat_list = goat_data.get(key, [])
+
+                csd_stats = calculate_statistics(csd_list)
+                goat_stats = calculate_statistics(goat_list)
+                overlap = overlap_count(csd_list, goat_list)
+                cov_csd_goat = get_overlap_percentage(overlap, csd_stats["count"])
+                cov_goat_csd = get_overlap_percentage(overlap, goat_stats["count"])
+
+                stats["total_combinations"] += 1
+                stats["csd_total"] += csd_stats["count"]
+                stats["goat_total"] += goat_stats["count"]
+                stats["overlap_total"] += overlap
+
+                out.write(f"\nCombination: {key}\n")
+                out.write(f"  CSD:  n={csd_stats['count']}, Range=[{csd_stats['min']:.2f}, {csd_stats['max']:.2f}], "
+                          f"Mean={csd_stats['mean']:.2f} ± {csd_stats['std']:.2f}, Median={csd_stats['median']:.2f}\n")
+                out.write(f"  GOAT: n={goat_stats['count']}, Range=[{goat_stats['min']:.2f}, {goat_stats['max']:.2f}], "
+                          f"Mean={goat_stats['mean']:.2f} ± {goat_stats['std']:.2f}, Median={goat_stats['median']:.2f}\n")
+                out.write(f"  Overlap: {overlap}\n")
+                out.write(f"  Coverage: CSD→GOAT: {cov_csd_goat:.1f}%, GOAT→CSD: {cov_goat_csd:.1f}%\n")
+
+            out.write(f"\n{label} SUMMARY\n")
+            out.write(f"  Total combinations: {stats['total_combinations']}\n")
+            out.write(f"  Total CSD values: {stats['csd_total']}\n")
+            out.write(f"  Total GOAT values: {stats['goat_total']}\n")
+            out.write(f"  Total overlap: {stats['overlap_total']}\n")
+            if stats["csd_total"] > 0:
+                out.write(f"  Avg. CSD coverage: {stats['overlap_total']/stats['csd_total']*100:.1f}%\n")
+
+        # Combined summary
+        total_comb = stats_overall["winkel"]["total_combinations"] + stats_overall["torsion"]["total_combinations"]
+        total_csd = stats_overall["winkel"]["csd_total"] + stats_overall["torsion"]["csd_total"]
+        total_goat = stats_overall["winkel"]["goat_total"] + stats_overall["torsion"]["goat_total"]
+        total_overlap = stats_overall["winkel"]["overlap_total"] + stats_overall["torsion"]["overlap_total"]
+
+        out.write("\n" + "="*80 + "\nOVERALL SUMMARY\n" + "="*50 + "\n")
+        out.write(f"  Total combinations: {total_comb}\n")
+        out.write(f"  Total CSD values: {total_csd}\n")
+        out.write(f"  Total GOAT values: {total_goat}\n")
+        out.write(f"  Total overlap: {total_overlap}\n")
+        if total_csd > 0:
+            out.write(f"  Avg. total coverage: {total_overlap/total_csd*100:.1f}%\n")
+
+    # Summary export
+    with open(summary_file, "w", encoding="utf-8") as f:
+        f.write(f"Angle and Torsion Summary ({timestamp})\n{'='*60}\n")
+        for label in ["winkel", "torsion"]:
+            stats = stats_overall[label]
+            f.write(f"\n{label.upper()}:\n")
+            f.write(f"  Combinations: {stats['total_combinations']}\n")
+            f.write(f"  CSD values: {stats['csd_total']}\n")
+            f.write(f"  GOAT values: {stats['goat_total']}\n")
+            f.write(f"  Overlap: {stats['overlap_total']}\n")
+            if stats["csd_total"] > 0:
+                f.write(f"  Coverage: {stats['overlap_total']/stats['csd_total']*100:.1f}%\n")
+        f.write(f"\nOVERALL:\n")
+        f.write(f"  Combinations: {total_comb}\n")
+        f.write(f"  CSD values: {total_csd}\n")
+        f.write(f"  GOAT values: {total_goat}\n")
+        f.write(f"  Overlap: {total_overlap}\n")
+        if total_csd > 0:
+            f.write(f"  Total coverage: {total_overlap/total_csd*100:.1f}%\n")
+
+

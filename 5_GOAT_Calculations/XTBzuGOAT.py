@@ -116,10 +116,10 @@ def find_xyz_for_output(out_path):
         return xyz_path
     return None
 
-def process_directory(base_dir, goat_dir="D:\\GOAT_Daten", test_mode=False, limit=5):
+def process_directory(base_dir, goat_dir="<GOAT_Input>", test_mode=False, limit=5):  # Path to output containing the GOAT input files
     """Process all XTB calculations in the 'Linear' subdirectory."""
     # Restrict processing to the 'Linear' subdirectory
-    linear_dir = os.path.join(base_dir, "Linear")
+    linear_dir = os.path.join(base_dir, "<Linear>")  # Path to the 'Linear' subdirectory 
     if not os.path.exists(linear_dir):
         logger.error(f"The 'Linear' subdirectory does not exist in {base_dir}.")
         return 0, 0
@@ -207,8 +207,8 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Convert successful XTB calculations to GOAT inputs")
-    parser.add_argument("--dir", "-d", default="XTB")
-    parser.add_argument("--goat-dir", "-g", default="GOAT_Inputs", 
+    parser.add_argument("--dir", "-d", default="<XTB>") # Path to the base directory containing the XTB calculations
+    parser.add_argument("--goat-dir", "-g", default="<GOAT_Inputs>", 
                         help="Output directory for GOAT input files (default: GOAT_Inputs)")
     parser.add_argument("--test-mode", "-t", action="store_true", help="Enable test mode (process limited number of files)")
     parser.add_argument("--limit", "-l", type=int, default=5, help="Limit number of files to process in test mode (default: 5)")

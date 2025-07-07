@@ -2,36 +2,38 @@ import os
 import shutil
 from collections import defaultdict
 
+# Extract all energies from a .xyz file (multiple conformers)
 def extract_energien_from_xyz(filepath):
-    energien = []
+    energies = []
     with open(filepath, 'r', errors='ignore') as f:
         lines = f.readlines()
     i = 0
     while i < len(lines):
         try:
-            n_atoms = int(lines[i].strip())
+            n_atoms = int(lines[i].strip())  # number of atoms
         except ValueError:
             break
         if i + 1 < len(lines):
-            kommentar = lines[i + 1].strip()
+            comment = lines[i + 1].strip()
             try:
-                energy = float(kommentar.split()[0])
-                energien.append(energy)
+                energy = float(comment.split()[0])  # assume first entry is the energy
+                energies.append(energy)
             except Exception:
                 pass
-        i += n_atoms + 2
-    return energien
+        i += n_atoms + 2  # skip to next conformer
+    return energies
 
+# Cleanup function that selects the best multiplicity based on minimum energy
 def cleanup_mult_folders(root_dir, target_dir, unsicher_dir):
-    Grenzfall_Counter = 0
-    Verschoben_Counter = 0
-    Einzel_counter = 0
-    Gesamt_counter = 0
-    mehrfach_mult_namen = []
+    borderline_counter = 0   # files where no best multiplicity was found
+    moved_counter = 0        # number of moved files
+    single_counter = 0       # systems with only one multiplicity
+    total_counter = 0        # total systems compared
+    multiple_mult_names = [] # systems with multiple multiplicities
 
-    print(f"Starte Durchlauf im Wurzelverzeichnis: {root_dir}")
+    print(f"Starting scan in root directory: {root_dir}")
 
-    # 1. Sammle alle Dateien im gesamten Verzeichnisbaum
+    # 1. Collect all .xyz files in the directory tree
     all_files = []
     for dirpath, _, filenames in os.walk(root_dir):
         for filename in filenames:
@@ -42,27 +44,27 @@ def cleanup_mult_folders(root_dir, target_dir, unsicher_dir):
                     mult = parts[1].replace(".xyz", "")
                     all_files.append((basename, int(mult), os.path.join(dirpath, filename)))
                 else:
-                    print(f"    -> WARNUNG: Datei entspricht nicht dem Schema: {filename}")
+                    print(f"    -> WARNING: Filename does not match expected pattern: {filename}")
 
-    # 2. Gruppiere nach Basename (über alle Ordner hinweg)
+    # 2. Group by basename (regardless of folder)
     mult_files = defaultdict(list)
     for basename, mult, filepath in all_files:
         mult_files[basename].append((mult, filepath))
 
-    # 3. Vergleiche Multiplizitäten
+    # 3. Compare multiplicities and determine which file to keep
     for basename, files in mult_files.items():
         if len(files) < 2:
-            Einzel_counter += 1
-            continue  # Nur vergleichen, wenn mehrere Multiplizitäten vorhanden sind
+            single_counter += 1
+            continue  # only compare if multiple multiplicities exist
 
-        Gesamt_counter += 1
-        mehrfach_mult_namen.append(basename)
-        print(f"\n  Vergleiche Gruppe: {basename}")
-        files.sort(key=lambda x: x[0])  # Sortiere nach Multiplizität
+        total_counter += 1
+        multiple_mult_names.append(basename)
+        print(f"\n  Comparing group: {basename}")
+        files.sort(key=lambda x: x[0])  # sort by multiplicity
         energies = [(mult, extract_energien_from_xyz(filepath)) for mult, filepath in files]
-        print(f"    Extrahierte Energien: {energies}")
+        print(f"    Extracted energies: {energies}")
 
-        # Günstigste Multiplizität: niedrigste minimale Energie
+        # Determine lowest minimum energy → best multiplicity
         best_mult = None
         best_energy = None
         for mult, energy_list in energies:
@@ -76,41 +78,42 @@ def cleanup_mult_folders(root_dir, target_dir, unsicher_dir):
         if best_mult is not None:
             for mult, filepath in files:
                 if mult != best_mult:
-                    # Zielordner wie bisher: relativer Pfad zum root_dir
                     rel_path = os.path.relpath(os.path.dirname(filepath), root_dir)
                     target_subfolder = os.path.join(target_dir, rel_path)
                     os.makedirs(target_subfolder, exist_ok=True)
                     new_name = os.path.basename(filepath)
-                    print(f"    Verschiebe {filepath} nach {os.path.join(target_subfolder, new_name)}")
+                    print(f"    Moving {filepath} → {os.path.join(target_subfolder, new_name)}")
                     shutil.move(filepath, os.path.join(target_subfolder, new_name))
-                    Verschoben_Counter += 1
+                    moved_counter += 1
         else:
-            # Falls keine Energie gefunden wurde, verschiebe alle in unsicher
+            # if no valid energy was found, move all files to the uncertain folder
             for _, filepath in files:
                 rel_path = os.path.relpath(os.path.dirname(filepath), root_dir)
                 target_subfolder = os.path.join(unsicher_dir, rel_path)
-                print(f"    KEINE beste Multiplizität gefunden, verschiebe {filepath} nach {target_subfolder}")
+                print(f"    NO best multiplicity found, moving {filepath} → {target_subfolder}")
                 os.makedirs(target_subfolder, exist_ok=True)
                 shutil.move(filepath, os.path.join(target_subfolder, os.path.basename(filepath)))
-                Grenzfall_Counter += 1
+                borderline_counter += 1
 
-    print(f"\nVerschobene Dateien: {Verschoben_Counter}")
-    print(f"Grenzfälle: {Grenzfall_Counter}")
-    print(f"Einzelne Multiplizitäten: {Einzel_counter}")
-    print(f"Vergleichspaare: {Gesamt_counter}")
+    print(f"\nMoved files: {moved_counter}")
+    print(f"Uncertain cases: {borderline_counter}")
+    print(f"Single multiplicities: {single_counter}")
+    print(f"Total comparison groups: {total_counter}")
 
-    statistik_path = os.path.join(os.path.dirname(__file__), "statistik.txt")
+    # Save statistics to a file
+    statistik_path = os.path.join(os.path.dirname(__file__), "statistics.txt")
     with open(statistik_path, "w", encoding="utf-8") as f:
-        f.write(f"Vergleichspaare: {Gesamt_counter}\n")
-        f.write(f"Verschobene Dateien: {Verschoben_Counter}\n")
-        f.write(f"Grenzfälle: {Grenzfall_Counter}\n")
-        f.write(f"Einzelne Multiplizitäten: {Einzel_counter}\n")
-        f.write("Komplexe mit mehreren Multiplizitäten:\n")
-        for name in mehrfach_mult_namen:
+        f.write(f"Comparison groups: {total_counter}\n")
+        f.write(f"Moved files: {moved_counter}\n")
+        f.write(f"Uncertain cases: {borderline_counter}\n")
+        f.write(f"Single multiplicities: {single_counter}\n")
+        f.write("Complexes with multiple multiplicities:\n")
+        for name in multiple_mult_names:
             f.write(f"{name}\n")
 
+# Entry point of the script
 if __name__ == "__main__":
-    sortierter_ordner = r"C:\Users\Elisabeth\Documents\Tests\Spin_Cleanup_neu\GOAT_Sorted_New"
-    ziel_ordner = r"C:\Users\Elisabeth\Documents\Tests\Spin_Cleanup_neu\GOAT_Mult_Unguenstig"
-    unsicher_ordner = r"C:\Users\Elisabeth\Documents\Tests\Spin_Cleanup_neu\GOAT_Mult_Unsicher"
-    cleanup_mult_folders(sortierter_ordner, ziel_ordner, unsicher_ordner)
+    sorted_folder = r"<GOAT_Sorted_New>"       # root folder with all multiplicities
+    target_folder = r"<GOAT_Mult_Unguenstig>"  # folder for non-optimal multiplicities
+    uncertain_folder = r"<GOAT_Mult_Unsicher>" # folder for unclear energy cases
+    cleanup_mult_folders(sorted_folder, target_folder, uncertain_folder)

@@ -1,12 +1,12 @@
 """
-Umw_Neu.py
-
 Konvertiert alle .xyz-Dateien in einem Ordner zu .mol-Dateien mit Bindungsinformationen und Ladungen.
+# Converts all .xyz files in a folder to .mol files with bonding and charge information.
+
 Unterstützt auch mehrere Konformere pro .xyz-Datei und erkennt Metall-Ligand-Komplexe sowie Standardliganden (z.B. NH3, H2O).
+# Supports multiple conformers per .xyz file and detects metal-ligand complexes as well as standard ligands (e.g., NH3, H2O).
 
 Benötigt: RDKit, numpy
-
-Autor: GitHub Copilot
+# Requirements: RDKit, numpy
 """
 
 import os
@@ -15,6 +15,7 @@ import numpy as np
 from rdkit import Chem
 
 # Liganden-Ladungen (nach Bedarf erweitern)
+# Ligand charges (extend if needed)
 LIGAND_CHARGES = {
     "Cl": -1,
     "H2O": 0,
@@ -23,10 +24,11 @@ LIGAND_CHARGES = {
     "PH3": 0,
     "CH3": -1,
     "H2S": 0,
-    # usw.
+    # etc.
 }
 
 # Vorlagen für interne Bindungen in Standardliganden
+# Bond templates for standard ligands (center atom and partners)
 LIGAND_BOND_TEMPLATES = {
     "NH3": ("N", ["H", "H", "H"]),
     "H2O": ("O", ["H", "H"]),
@@ -34,10 +36,11 @@ LIGAND_BOND_TEMPLATES = {
     "H2S": ("S", ["H", "H"]),
     "CO": ("C", ["O"]),
     "PH3": ("P", ["H", "H", "H"]),
-    # ggf. weitere Liganden ergänzen
+    # more if needed
 }
 
 # Mapping: Welches Atom bindet an das Zentralatom?
+# Which atom binds to the central metal atom
 LIGAND_ANCHOR_ATOM = {
     "H2S": "S",
     "NH3": "N",
@@ -46,13 +49,15 @@ LIGAND_ANCHOR_ATOM = {
     "CO": "C",
     "PH3": "P",
     "Cl": "Cl"
-    # ggf. weitere Liganden ergänzen
+    # extend if necessary
 }
 
 def read_xyz_all_conformers(filename):
     """
     Liest alle Konformere aus einer XYZ-Datei.
+    # Reads all conformers from an XYZ file.
     Rückgabe: Liste von Tupeln (atoms, coords)
+    # Returns: list of tuples (atoms, coords)
     """
     with open(filename, 'r') as f:
         lines = f.readlines()
@@ -79,6 +84,7 @@ def read_xyz_all_conformers(filename):
 def parse_filename(filename):
     """
     Extrahiert Zentralatom, Oxidationszahl und Liganden aus dem Dateinamen.
+    # Extracts central atom, oxidation state and ligands from filename.
     Beispiel: OC_Mo_3_(Cl)(H2S)4(NH3).xyz
     Rückgabe: zentralatom (str), oxzahl (int), liganden (list)
     Für einfache Moleküle wie NH3.xyz: zentralatom=None, oxzahl=0, liganden=[Name]
@@ -96,11 +102,13 @@ def parse_filename(filename):
         return zentralatom, oxzahl, liganden
     else:
         # Nur ein Molekülname, z.B. NH3.xyz
+        # Only a molecule name like NH3.xyz
         return None, 0, [base]
 
 def find_metall_ligand_bonds(atoms, zentralatom, liganden):
     """
     Gibt eine Liste von (z_idx, lig_idx, BondType) für alle Metall-Ligand-Bindungen zurück.
+    # Returns a list of (z_idx, lig_idx, BondType) for all metal-ligand bonds.
     """
     z_idx = atoms.index(zentralatom)
     lig_idx = []
@@ -118,15 +126,14 @@ def find_metall_ligand_bonds(atoms, zentralatom, liganden):
 
 def find_internal_ligand_bonds(atoms, liganden):
     """
-    Gibt eine Liste von (center_idx, partner_idx, BondType) für alle internen Ligandenbindungen zurück.
-    Sucht für jede Ligandeninstanz das Zentrum und die Partneratome und setzt die Bindungen.
+    Gibt eine Liste von internen Ligandenbindungen zurück.
+    # Returns a list of internal ligand bonds.
     """
     bonds = []
     used = [False] * len(atoms)
     for lig in liganden:
         if lig in LIGAND_BOND_TEMPLATES:
             center, partners = LIGAND_BOND_TEMPLATES[lig]
-            # Temporäre Kopie für diese Ligandeninstanz
             temp_used = used.copy()
             center_idx = None
             for i, a in enumerate(atoms):
@@ -149,21 +156,18 @@ def find_internal_ligand_bonds(atoms, liganden):
 
 def build_bonds_and_charges(atoms, zentralatom, liganden, oxzahl):
     """
-    Erstellt Bindungsinformationen und berechnet Ladungen.
-    Setzt auch die formellen Ladungen der Liganden-Zentren gemäß LIGAND_CHARGES.
+    Erstellt Bindungen und berechnet formelle Ladungen.
+    # Builds bonds and computes formal charges.
     """
     bonds = []
     charges = {}
     ligand_center_indices = []
     if zentralatom is not None:
-        # Metallkomplex
         metall_lig_bonds, lig_idx = find_metall_ligand_bonds(atoms, zentralatom, liganden)
         bonds.extend(metall_lig_bonds)
         charges[atoms.index(zentralatom)] = oxzahl
         internal_bonds = find_internal_ligand_bonds(atoms, liganden)
-
         bonds.extend(internal_bonds)
-        # Setze Liganden-Zentrum-Ladungen
         used = [False]*len(atoms)
         used[atoms.index(zentralatom)] = True
         for idx in lig_idx:
@@ -177,14 +181,12 @@ def build_bonds_and_charges(atoms, zentralatom, liganden, oxzahl):
                         used[i] = True
                         break
             else:
-                # Einatomige Liganden wie Cl-
                 anchor = LIGAND_ANCHOR_ATOM.get(lig, lig)
                 for i, a in enumerate(atoms):
                     if not used[i] and a == anchor:
                         ligand_center_indices.append(i)
                         used[i] = True
                         break
-        # Setze Ladung für jedes Liganden-Zentrum, falls vorhanden (unabhängig von used-Listen)
         for lig in liganden:
             if lig in LIGAND_BOND_TEMPLATES:
                 center, _ = LIGAND_BOND_TEMPLATES[lig]
@@ -203,11 +205,8 @@ def build_bonds_and_charges(atoms, zentralatom, liganden, oxzahl):
                             charges[i] = charge
                         break
     else:
-        # Einfaches Molekül (z.B. NH3, H2O)
-        lig_idx = []
         internal_bonds = find_internal_ligand_bonds(atoms, liganden)
         bonds.extend(internal_bonds)
-        # Setze Ladung für das Zentrum, falls vorhanden
         if liganden[0] in LIGAND_BOND_TEMPLATES:
             center, _ = LIGAND_BOND_TEMPLATES[liganden[0]]
             for i, a in enumerate(atoms):
@@ -217,7 +216,6 @@ def build_bonds_and_charges(atoms, zentralatom, liganden, oxzahl):
                         charges[i] = charge
                     break
         else:
-            # Einatomiges Molekül wie Cl-
             anchor = LIGAND_ANCHOR_ATOM.get(liganden[0], liganden[0])
             for i, a in enumerate(atoms):
                 if a == anchor:
@@ -225,7 +223,6 @@ def build_bonds_and_charges(atoms, zentralatom, liganden, oxzahl):
                     if charge != 0:
                         charges[i] = charge
                     break
-    # Ladung berechnen (optional, für Gesamtladung)
     lig_charge = sum(LIGAND_CHARGES.get(l, 0) for l in liganden)
     total_charge = oxzahl + lig_charge
     return bonds, charges, total_charge
@@ -233,6 +230,7 @@ def build_bonds_and_charges(atoms, zentralatom, liganden, oxzahl):
 def build_mol_with_coords(atoms, coords, bonds, charges):
     """
     Baut ein RDKit-Molekülobjekt mit 3D-Koordinaten, Bindungen und Ladungen.
+    # Builds an RDKit Mol object with 3D coordinates, bonds, and formal charges.
     """
     mol = Chem.RWMol()
     atom_indices = []
@@ -252,4 +250,18 @@ def build_mol_with_coords(atoms, coords, bonds, charges):
     m.AddConformer(conf, assignId=True)
     return m
 
-
+if __name__ == "__main__":
+    # Ordner mit .xyz-Dateien
+    # Folder containing .xyz files
+    ordner = r"<xyz_ordner>>"  # Replace with your folder path
+    for filename in os.listdir(ordner):
+        if filename.endswith(".xyz"):
+            xyz_file = os.path.join(ordner, filename)
+            zentralatom, oxzahl, liganden = parse_filename(filename)
+            conformers = read_xyz_all_conformers(xyz_file)
+            for idx, (atoms, coords) in enumerate(conformers):
+                bonds, charges, total_charge = build_bonds_and_charges(atoms, zentralatom, liganden, oxzahl)
+                mol = build_mol_with_coords(atoms, coords, bonds, charges)
+                #molfile_name = os.path.splitext(filename)[0] + f"_conf{idx+1}.mol"
+                #Chem.MolToMolFile(mol, os.path.join(ordner, molfile_name))
+                #print(f"Konvertiert: {filename} (Konformer {idx+1}) -> {molfile_name}\n")

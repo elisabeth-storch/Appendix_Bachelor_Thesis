@@ -10,7 +10,6 @@ from datetime import datetime
 import pathlib
 import signal
 import sys
-import random  # Für die Zufallsauswahl
 
 # Configure logging
 logging.basicConfig(
@@ -107,7 +106,7 @@ class OrcaJobQueue:
             base_name = os.path.splitext(os.path.basename(input_file))[0]
             xyz_file = os.path.join(os.path.dirname(input_file), f"{base_name}.xyz")
 
-            # Nur hinzufügen, wenn KEINE .xyz-Datei existiert
+            # Only add if NO .xyz file exists
             if not os.path.isfile(xyz_file):
                 self.add_job(input_file)
                 added_count += 1
